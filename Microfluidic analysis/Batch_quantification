@@ -1,0 +1,21 @@
+//Biofilm formation in the images was quantified as mean gray value using ImageJ 1.54f
+
+setAutoThreshold("Default");
+
+//run("Threshold...");
+setThreshold(0, 161, "raw");
+run("Convert to Mask", "background=Light black create");
+run("Close");
+
+//run("Brightness/Contrast...");
+run("Apply LUT", "stack");
+
+makeRectangle(0, 152, 1391, 723);
+run("Measure Stack...");
+
+// 获取当前stack的名称或索引号
+name = getTitle();  // 获取当前文件名
+path = "../Quantification/";
+
+// 保存为唯一的文件名
+saveAs("Results", path + name + ".csv");
