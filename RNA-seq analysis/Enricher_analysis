@@ -1,0 +1,214 @@
+##使用enricher()进行GO富集分析
+
+# 拆分 GO term 到多个行
+eggNOG_GO <- eggNOG_Ab %>% separate_rows(GOs, sep = ",")
+eggNOG_GO <- eggNOG_GO[, c("WP_ID", "GOs")] 
+
+# 查看结果
+head(eggNOG_GO)
+
+library(GO.db)  # 包含 GO 的数据库
+
+go_terms <- unique(eggNOG_GO$GOs)
+# 获取 GO term 的描述信息
+go_descriptions <- AnnotationDbi::select(GO.db, keys = go_terms, columns = c("GOID", "TERM"), keytype = "GOID")
+
+# 合并 GO term 的描述信息到 eggNOG_GO
+eggNOG_GO <- merge(eggNOG_GO, go_descriptions, by.x = "GOs", by.y = "GOID", all.x = TRUE)
+
+# 查看结果
+head(eggNOG_GO)
+
+
+# TERM2GENE 数据框
+TERM2GENE <- eggNOG_GO %>%
+  dplyr::select(GOs, WP_ID) %>%
+  dplyr::rename(term = GOs, gene = WP_ID)
+TERM2GENE <- filter(TERM2GENE, term != "-")
+# 查看 TERM2GENE 数据
+head(TERM2GENE)
+
+TERM2NAME <- eggNOG_GO %>%
+  dplyr::select(GOs, TERM) %>%
+  dplyr::rename(term = GOs, name = TERM)
+TERM2NAME <- filter(TERM2NAME, term != "-") %>%
+  distinct()
+head(TERM2NAME)
+
+# 加载 clusterProfiler
+library(clusterProfiler)
+
+# 假设 gene_list 是上调或下调的基因列表
+gene_list <- gene_list_down  # 或者 gene_list_down
+
+# 使用 enricher 进行 GO 富集分析
+go_enrichment <- enricher(
+  gene = gene_list,         # 基因列表
+  TERM2GENE = TERM2GENE,    # GO term 对应的基因关系
+  TERM2NAME = TERM2NAME,
+  pAdjustMethod = "BH",     # 使用 Benjamini-Hochberg 方法校正 p 值
+  pvalueCutoff = 0.05       # p 值阈值
+)
+
+# 查看富集结果
+head(go_enrichment)
+
+# 使用 dotplot 可视化 GO 富集结果
+dotplot(go_enrichment, showCategory = 10) + ggtitle("GO Enrichment Analysis")
+
+# 或者使用 barplot
+barplot(go_enrichment, showCategory = 10)
+
+
+###KEGG富集分析
+
+# 拆分 KEGG Pathway 到多行
+eggNOG_kegg <- eggNOG_Ab %>%
+  separate_rows(KEGG_Pathway, sep = ",") %>%
+  dplyr::select(WP_ID, KEGG_Pathway) %>%
+  filter(KEGG_Pathway != "-")
+head(eggNOG_kegg)
+
+# 加载 KEGGREST 包
+library(KEGGREST)
+
+# 假设 KEGG_Pathway 包含 KEGG Pathway 的 ID
+kegg_ids <- unique(eggNOG_kegg$KEGG_Pathway)
+
+# 使用 KEGGREST 提取 KEGG Pathway 的描述信息
+kegg_descriptions <- lapply(kegg_ids, function(id) {
+  pathway_info <- tryCatch(keggGet(id)[[1]], error = function(e) NULL)
+  if (!is.null(pathway_info)) {
+    return(data.frame(
+      KEGG_ID = id,
+      Description = pathway_info$NAME
+    ))
+  } else {
+    return(data.frame(KEGG_ID = id, Description = NA))
+  }
+})
+
+keggGet("ko00062")
+
+# 将描述信息合并为数据框
+kegg_descriptions_df <- do.call(rbind, kegg_descriptions)
+
+# 查看结果
+head(kegg_descriptions_df)
+
+# 将描述信息合并回 eggNOG_kegg
+eggNOG_kegg <- merge(eggNOG_kegg, kegg_descriptions_df, by.x = "KEGG_Pathway", by.y = "KEGG_ID", all.x = TRUE)
+
+# 查看结果
+head(eggNOG_kegg)
+
+
+TERM2NAME <- eggNOG_kegg %>%
+  dplyr::select(KEGG_Pathway, Description) %>%
+  dplyr::rename(term = KEGG_Pathway, name = Description) %>%
+  distinct() %>%
+  dplyr::filter(!is.na(name))  # 去除 name 为 NA 的行
+
+# TERM2GENE 数据框
+TERM2GENE <- eggNOG_kegg %>%
+  dplyr::select(KEGG_Pathway, WP_ID) %>%
+  dplyr::rename(term = KEGG_Pathway, gene = WP_ID) %>%
+  dplyr::filter(term %in% TERM2NAME$term)
+
+
+# 查看 TERM2GENE 数据
+head(TERM2GENE)
+head(TERM2NAME)
+
+#合并上下调差异基因
+AH_AC <- c(up_AH_AC, down_AH_AC)
+DC_AC <- c(up_DC_AC, down_DC_AC)
+DH_DC <- c(up_DH_DC, down_DH_DC)
+
+kegg_pathway_AH_AC <- enricher(AH_AC, 
+                                    TERM2GENE = TERM2GENE, 
+                                    TERM2NAME = TERM2NAME,
+                                    pAdjustMethod = "BH", 
+                                    pvalueCutoff = 0.05)
+
+kegg_pathway_DC_AC <- enricher(DC_AC, 
+                                  TERM2GENE = TERM2GENE, 
+                                  TERM2NAME = TERM2NAME,
+                                  pAdjustMethod = "BH", 
+                                  pvalueCutoff = 0.05)
+
+kegg_pathway_DH_DC <- enricher(DH_DC, 
+                                  TERM2GENE = TERM2GENE, 
+                                  TERM2NAME = TERM2NAME,
+                                  pAdjustMethod = "BH", 
+                                  pvalueCutoff = 0.05)
+
+# 查看结果
+head(kegg_pathway_enrichment)
+# 可视化富集结果
+dotplot(kegg_pathway_AH_AC)
+dotplot(kegg_pathway_DC_AC)
+dotplot(kegg_pathway_DH_DC)
+
+# 首先加载 cowplot 包
+library(cowplot)
+
+# 统一 p.adjust 颜色比例范围
+max_p_adjust <- max(c(
+  min(kegg_pathway_AH_AC@result$p.adjust),
+  min(kegg_pathway_DC_AC@result$p.adjust),
+  min(kegg_pathway_DH_DC@result$p.adjust)
+))
+
+min_p_adjust <- min(c(
+  max(kegg_pathway_AH_AC@result$p.adjust),
+  max(kegg_pathway_DC_AC@result$p.adjust),
+  max(kegg_pathway_DH_DC@result$p.adjust)
+))
+
+# 提取所有 count 的最大和最小值
+max_count <- max(c(
+  max(kegg_pathway_AH_AC@result$Count),
+  max(kegg_pathway_DC_AC@result$Count),
+  max(kegg_pathway_DH_DC@result$Count)
+))
+
+min_count <- min(c(
+  min(kegg_pathway_AH_AC@result$Count),
+  min(kegg_pathway_DC_AC@result$Count),
+  min(kegg_pathway_DH_DC@result$Count)
+))
+
+# 为每个 dotplot 设置相同的点大小映射
+dotplot_AH_AC <- dotplot(kegg_pathway_AH_AC) + 
+  scale_size_continuous(limits = c(min_count, max_count)) +  # 统一点大小
+  scale_color_continuous(limits = c(min_p_adjust, max_p_adjust)) +  # 统一颜色映射
+  theme(legend.position = "none")
+
+dotplot_DC_AC <- dotplot(kegg_pathway_DC_AC) + 
+  scale_size_continuous(limits = c(min_count, max_count)) +
+  scale_color_continuous(limits = c(min_p_adjust, max_p_adjust)) +
+  theme(legend.position = "none")
+
+dotplot_DH_DC <- dotplot(kegg_pathway_DH_DC) + 
+  scale_size_continuous(limits = c(min_count, max_count)) +
+  scale_color_continuous(limits = c(min_p_adjust, max_p_adjust)) +
+  theme(legend.position = "none")
+
+# 提取图例并组合
+legend <- get_legend(dotplot(kegg_pathway_AH_AC) + 
+                       scale_size_continuous(limits = c(min_count, max_count)) + 
+                       scale_color_continuous(limits = c(min_p_adjust, max_p_adjust)) +
+                       theme(legend.position = "right"))
+
+# 使用 plot_grid 组合图形
+combined_plot <- plot_grid(
+  dotplot_AH_AC, dotplot_DC_AC, dotplot_DH_DC, 
+  ncol = 3, align = "v", labels = c("A", "B", "C")
+)
+
+# 将图例与组合图放在一起
+final_plot <- plot_grid(combined_plot, legend, rel_widths = c(3, 0.5))
+
+# 显示最终的图形
+print(final_plot)
