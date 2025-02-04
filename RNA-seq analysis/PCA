@@ -1,0 +1,67 @@
+# 加载必要的库
+library(dplyr)
+library(plotly)
+library(ggplot2)
+
+# 读取基因表达矩阵和分组信息
+#设置文件路径
+dir <- "D:/NetDrive/OneDrive - wlulab/Work/复旦/课题/MRSA biofilm vs HNP1/20241114 - RNAseq - 29213 VS HNP1/result/05.GeneExp"
+
+#读取文件
+csvfile <- file.path(dir,"genes.rpkm.anno.xls")
+cpm <- read.csv(csvfile,row.names = 1,stringsAsFactors = F, header = T, sep = "\t")
+head(cpm)
+
+coldata <- data.frame(
+  SampleID = colnames(cpm)[2:13],
+  Bacteria = c(rep("WT",6), rep("DeltaA",6)),
+  HNP1 = c(rep("None", 3),rep("Treated",3),rep("None", 3),rep("Treated",3))
+)
+head(coldata)
+
+# 新增一列，赋值为Bacteria列和HNP1列的组合值
+coldata <- coldata %>%
+  mutate(Group = paste(Bacteria, HNP1, sep = "+"))
+
+# 新增一列，赋值为 Bacteria 列和 HNP1 列的组合值，并去除 "+" 和 "."
+coldata <- coldata %>%
+  mutate(Group1 = gsub("[+.]", "", paste(Bacteria, HNP1, sep = "")))
+
+# 移除全零行
+non_zero_variance_rows <- apply(expression_data, 1, function(row) var(row) > 0)
+expression_data <- expression_data[non_zero_variance_rows, ]
+
+# 确保没有行包含NA值
+expression_data <- expression_data[complete.cases(expression_data), ]
+
+
+# 进行PCA分析
+pca_result <- prcomp(t(expression_data), scale. = TRUE)
+
+pca_data <- data.frame(pca_result$x)
+head(pca_data)
+
+#计算Principal Components百分比
+pcvar <- apply(pca_result$x,2,var)
+percentage <- round(pcvar/sum(pcvar)*100,1)
+percentage <- paste(colnames(pca_data), " (",paste(as.character(percentage),"%",")", sep = ""))
+
+# 绘制二维PCA图并添加分组椭圆
+ggplot(pca_data, aes(x = PC1, y = PC2, color = coldata$Group),
+       #xlim = c(-150,150),
+       #ylim = c(-150,150)
+) +
+  geom_point(size = 4) +
+  #stat_ellipse(aes(group = coldata$Group), type = "norm", level = 0.95, geom = "polygon", alpha = 0.2) +
+  labs(title = "A. baumannii",
+       x = percentage[1], y = percentage[2]) +
+  coord_equal() +
+  theme_bw() +
+  theme(legend.position = "right") + 
+  geom_hline(aes(yintercept = 0),colour = "black", linetype = "dashed") + 
+  geom_vline(aes(xintercept = 0),colour = "black", linetype = "dashed") +
+  ylim(-75,75) +
+  xlim(-75,75) +
+  ggforce::geom_mark_ellipse(aes(fill = coldata$Group, colour = coldata$Group))
+                            
+                                
