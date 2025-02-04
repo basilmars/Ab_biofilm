@@ -1,0 +1,32 @@
+### Extract the figures at specific time points
+
+## 前2h为静置孵育时间,没有添加流速,所以时间从第2小时后开始计算
+## 提取时间是700 min,提取范围是120-800 min,图片为第24-140张.
+
+# 加载必要的包
+install.packages("magick")
+library(fs)  # 用于文件操作
+library(magick) #用 magick 包来批量处理图片，将其转换为 8-bit 格式。
+
+# 设置原始文件夹路径和目标文件夹路径
+source_folder <- "../aquisition/"
+target_folder <- "../Figure_extract/"
+
+# 定义要复制的文件名列表
+extract_list <- file.path(target_folder,"list.csv")
+file_list <- read.csv(extract_list, sep = ",")
+file_names <- file_list[[1]]
+
+# 遍历文件名列表并处理文件
+for (file_name in file_names) {
+  source_file <- file.path(source_folder, file_name)  # 原始文件路径
+  target_file <- file.path(target_folder, file_name)  # 目标文件路径
+  
+  # 检查文件是否存在，存在则复制
+  if (file_exists(source_file)) {
+    file_copy(source_file, target_file, overwrite = TRUE)
+    cat("Copied:", file_name, "\n")
+  } else {
+    cat("File not found:", file_name, "\n")
+  }
+}
