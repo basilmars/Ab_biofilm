@@ -1,0 +1,133 @@
+##读取手动提取的biofilm related gene 列表
+biofilm_genes <- read_excel("biofilm_genes.xlsx")
+
+##提取cpm中相关基因的检测数据
+
+# 首先确保biofilm_genes和cpm的行名可以正确匹配
+library(dplyr)
+
+# 将cpm的行名转换为一列Locus_Tag，以便和biofilm_genes进行合并
+cpm <- cpm %>% rownames_to_column(var = "Locus_Tag")
+
+# 根据Locus_Tag进行合并，将cpm中的Ab1-6、D1-6列加入到biofilm_genes中
+biofilm_genes_cpm <- biofilm_genes %>%
+  left_join(cpm, by = "Locus_Tag")
+
+# 创建新列，根据 Symbol 值赋值，若为 NA，则使用 Locus_Tag
+biofilm_genes_cpm <- biofilm_genes_cpm %>%
+  mutate(Symbol_or_Locus = ifelse(Symbol == "NA", Locus_Tag, Symbol))
+
+# 修改重复值，给这些 Symbol 加上对应的 Locus_Tag 后缀，并去除 "KIH05" 前缀
+biofilm_genes_cpm <- biofilm_genes_cpm %>%
+  mutate(Symbol_or_Locus = ifelse(Symbol %in% c("pgaB", "pgaC", "pgaD"),
+                                  paste(Symbol, gsub("KIH05_", "", Locus_Tag), sep = "_"),
+                                  Symbol_or_Locus))
+
+# 计算各组的平均值
+biofilm_genes_cpm <- biofilm_genes_cpm %>%
+  mutate(
+    WT = rowMeans(dplyr::select(., Ab1, Ab2, Ab3)),            # 计算 Ab1-3 的平均值
+    `WT+HNP1` = rowMeans(dplyr::select(., Ab4, Ab5, Ab6)),     # 计算 Ab4-6 的平均值
+    D = rowMeans(dplyr::select(., D1, D2, D3)),                # 计算 D1-3 的平均值
+    `D+HNP1` = rowMeans(dplyr::select(., D4, D5, D6))          # 计算 D4-6 的平均值
+  )
+
+# 查看合并后的结果
+head(biofilm_genes_cpm)
+write.csv(biofilm_genes_cpm, "biofilm_genes_cpm.csv")
+
+##分组信息
+coldata <- data.frame(
+  SampleID = colnames(cpm)[3:14],
+  Bacteria = c(rep("WT",6), rep("DeltaA",6)),
+  HNP1 = c(rep("None", 3),rep("Treated",3),rep("None", 3),rep("Treated",3))
+)
+head(coldata)
+rownames(coldata) <- coldata$SampleID
+coldata <- coldata[,-1]
+
+##做热图
+
+library(pheatmap)
+
+# 提取用于绘制热图的数值数据 (Ab1-6 和 D1-6)
+heatmap_data <- biofilm_genes_cpm %>%
+  dplyr::select(WT, "WT+HNP1", D, "D+HNP1") %>%
+  as.matrix()
+
+# 将 Locus_Tag 作为行名
+rownames(heatmap_data) <- biofilm_genes_cpm$Symbol_or_Locus
+
+# 定义颜色映射
+ann_colors <- list(
+  Bacteria = c(WT = "#E8776F", DeltaA = "#84AD00"),
+  HNP1 = c(None = "#56BFC3", Treated = "#BF7FFF")
+)
+
+# 准备行注释数据 (Symbol、Type)
+row_annotation <- data.frame(Type = biofilm_genes_cpm$Type) 
+rownames(row_annotation) <- biofilm_genes_cpm$Symbol_or_Locus
+
+# 使用 pheatmap 绘制带有行注释的热图
+pheatmap(
+  heatmap_data, 
+  #annotation_row = row_annotation,  # 添加行注释
+  #scale = "row",  # 按行进行标准化
+  cluster_rows = F,  # 对行进行聚类
+  cluster_cols = F,  # 对列进行聚类
+  show_rownames = TRUE,  # 显示行名
+  show_colnames = TRUE,   # 显示列名
+  annotation_colors = ann_colors
+)
+
+##热图横向排列
+
+# 转置数据矩阵，将行列交换
+heatmap_data_transposed <- t(heatmap_data)
+
+# 绘制转置后的热图
+pheatmap(
+  heatmap_data_transposed,  # 使用转置后的数据
+  #scale = "row",            # 按行（转置后的列）标准化
+  cluster_rows = F,      # 对原列（转置后为行）聚类
+  cluster_cols = F,      # 对原行（转置后为列）聚类
+  show_rownames = TRUE,     # 显示行名
+  show_colnames = TRUE,      # 显示列名
+  annotation_col = row_annotation,
+  angle_col = 45  # 设置列名的显示角度为45度
+)
+
+
+###做 log2FoldChange热图
+
+##读取手动提取的biofilm related gene 列表
+biofilm_genes <- read.csv("biofilm_genes_cpm.csv",sep = ",")
+
+biofilm_genes_log <- biofilm_genes %>%
+  mutate(Symbol_or_Locus = ifelse(Symbol %in% c("pgaB", "pgaC", "pgaD"),
+                                  paste(Symbol, gsub("KIH05_", "", Locus_Tag), sep = "_"),
+                                  Symbol_or_Locus))
+
+# 提取用于绘制热图的数值数据 (Ab1-6 和 D1-6)
+heatmap_data <- biofilm_genes_log %>%
+  dplyr::select(log.AC, log.AH, log.DC, log.DH) %>%
+  as.matrix()
+
+# 将 Locus_Tag 作为行名
+rownames(heatmap_data) <- biofilm_genes_log$Symbol_or_Locus
+
+# 转置数据矩阵，将行列交换
+heatmap_data_transposed <- t(heatmap_data)
+
+# 绘制转置后的热图
+pheatmap(
+  heatmap_data_transposed,  # 使用转置后的数据
+  #scale = "row",            # 按行（转置后的列）标准化
+  cluster_rows = F,      # 对原列（转置后为行）聚类
+  cluster_cols = F,      # 对原行（转置后为列）聚类
+  show_rownames = TRUE,     # 显示行名
+  show_colnames = TRUE,      # 显示列名
+  annotation_col = row_annotation,
+  angle_col = 45  # 设置列名的显示角度为45度
+)
+
