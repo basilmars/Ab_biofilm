@@ -1,0 +1,63 @@
+## The data were plotted with mean with 95% CI using the ggplot package in Rstudio.
+
+# 设置文件路径
+dir <- "../data/"
+
+MGV <- file.path(dir,"for_plot.csv")
+
+#读入数据，此例中数据的格式为
+data <- read.csv(MGV, sep = ",")
+head(data)
+
+#数据框
+data <- data[,c(1:18)]
+colnames(data) <- c("time",
+                    "S0_1","S0_2","S0_3","S0_4","S0_5",
+                    "S4_1","S4_2","S4_3","S4_4","S4_5",
+                    "S8_1","S8_2","S8_3","S8_4","S8_5")
+
+# 转换为长格式
+long_data <- data %>%
+  pivot_longer(cols = -time, names_to = "condition", values_to = "value") %>%
+  separate(condition, into = c("group","replicate"), sep = "_")
+
+# 计算均值和标准误差
+summary_data <- long_data %>%
+  group_by(time, group) %>%
+  summarize(
+    mean_value = mean(value, na.rm = TRUE), #忽略NA
+    se_value = sd(value, na.rm = TRUE) / sqrt(n())
+  ) %>%
+  ungroup()
+
+# 计算95%置信区间
+summary_data <- summary_data %>%
+  mutate(
+    lower_ci = mean_value - 1.96 * se_value,
+    upper_ci = mean_value + 1.96 * se_value
+  )
+
+# 设置颜色
+colors <- c("#ED7D31","springgreen3","#005100")
+
+# 绘制曲线图
+ggplot(summary_data, aes(x = time, y = mean_value, color = group, fill = group)) +
+  geom_line(size = 1) +  # 绘制均值曲线
+  geom_ribbon(aes(ymin = lower_ci, ymax = upper_ci), alpha = 0.2, color = NA) +  # 绘制95%置信区间
+  scale_color_manual(values = colors) +
+  scale_fill_manual(values = colors) +
+  labs(
+    title = "Biofilm Formation Over Time",
+    x = "Time (min)",
+    y = "Biofilm formation (Mean gray value)",
+    color = "Group",
+    fill = "Group"
+  ) +
+  theme_bw() +  # 使用简洁主题
+  theme(
+    axis.line = element_line(size = 1),  # 设置坐标轴粗细
+    axis.title = element_text(face = "bold"),  # 加粗坐标轴标注
+    axis.text = element_text(face = "bold")  # 加粗坐标轴刻度
+  ) +
+  scale_x_continuous(limits = c(0,700),expand = c(0, 0)) +  # X轴从0开始
+  scale_y_continuous(expand = c(0, 0))  # Y轴从0开始
