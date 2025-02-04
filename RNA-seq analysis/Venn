@@ -1,0 +1,113 @@
+# 读取基因表达矩阵和分组信息
+#设置文件路径
+dir <- "../Data/5.DEGs/"
+
+#读取文件
+
+AbH_vs_AbC <- read.csv(file.path(dir,"Paird_condition_of_Ab_H-vs-Ab_C_degs.xls"),
+                       row.names = 1,stringsAsFactors = F, header = T, sep = "\t")
+DC_vs_AbC <- read.csv(file.path(dir,"Paird_condition_of_Del_C-vs-Ab_C_degs.xls"),
+                       row.names = 1,stringsAsFactors = F, header = T, sep = "\t")
+DH_vs_DC <- read.csv(file.path(dir,"Paird_condition_of_Del_H-vs-Del_C_degs.xls"),
+                       row.names = 1,stringsAsFactors = F, header = T, sep = "\t")
+
+head(AbH_vs_AbC)
+
+#添加Proteins注释
+proteins <- gff_df$Protein.accession[match(rownames(AbH_vs_AbC),gff_df$Locus.tag)]
+products <- gff_df$Protein.name[match(rownames(AbH_vs_AbC),gff_df$Locus.tag)]
+
+AbH_vs_AbC$proteins <- proteins
+AbH_vs_AbC$products <- products
+
+proteins <- gff_df$Protein.accession[match(rownames(DC_vs_AbC),gff_df$Locus.tag)]
+products <- gff_df$Protein.name[match(rownames(DC_vs_AbC),gff_df$Locus.tag)]
+
+DC_vs_AbC$proteins <- proteins
+DC_vs_AbC$products <- products
+
+proteins <- gff_df$Protein.accession[match(rownames(DH_vs_DC),gff_df$Locus.tag)]
+products <- gff_df$Protein.name[match(rownames(DH_vs_DC),gff_df$Locus.tag)]
+
+DH_vs_DC$proteins <- proteins
+DH_vs_DC$products <- products
+
+##Venn图
+
+# 筛选每个比较组中显著上调的基因
+degs_AbH_vs_AbC <- AbH_vs_AbC %>%
+  filter(log2FoldChange > 1, padj < 0.05) %>%
+  rownames()
+
+# 同样地，对其他组进行筛选
+degs_DC_vs_AbC <- DC_vs_AbC %>%
+  filter(log2FoldChange > 1, padj < 0.05) %>%
+  rownames()
+
+degs_DH_vs_DC <- DH_vs_DC %>%
+  filter(log2FoldChange > 1, padj < 0.05) %>%
+  rownames()
+
+# 筛选显著下调的基因
+degs_down_AbH_vs_AbC <- AbH_vs_AbC %>%
+  filter(log2FoldChange < -1, padj < 0.05) %>%
+  rownames()
+
+degs_down_DC_vs_AbC <- DC_vs_AbC %>%
+  filter(log2FoldChange < -1, padj < 0.05) %>%
+  rownames()
+
+degs_down_DH_vs_DC <- DH_vs_DC %>%
+  filter(log2FoldChange < -1, padj < 0.05) %>%
+  rownames()
+
+up_AH_AC <- gff_df$Protein.accession[match(degs_AbH_vs_AbC, gff_df$Locus.tag)]
+up_DC_AC <- gff_df$Protein.accession[match(degs_DC_vs_AbC, gff_df$Locus.tag)]
+up_DH_DC <- gff_df$Protein.accession[match(degs_DH_vs_DC, gff_df$Locus.tag)]
+
+down_AH_AC <- gff_df$Protein.accession[match(degs_down_AbH_vs_AbC, gff_df$Locus.tag)]
+down_DC_AC <- gff_df$Protein.accession[match(degs_down_DC_vs_AbC, gff_df$Locus.tag)]
+down_DH_DC <- gff_df$Protein.accession[match(degs_down_DH_vs_DC, gff_df$Locus.tag)]
+
+
+library(VennDiagram)
+
+# 为上调基因创建Venn图
+venn_data_up <- list(
+  AbH_vs_AbC = degs_AbH_vs_AbC,
+  DC_vs_AbC = degs_DC_vs_AbC,
+  DH_vs_DC = degs_DH_vs_DC
+)
+
+venn_up <- venn.diagram(
+  x = venn_data_up,
+  category.names = c("AbH vs AbC", "DC_vs_AbC", "DH vs DC"),
+  filename = NULL,  # 直接绘制到RStudio绘图窗格
+  fill = c("purple", "orange", "cyan"),
+  alpha = 0.5,
+  cex = 1.5,
+  cat.cex = 1.5
+)
+
+grid.draw(venn_up)
+
+# 为下调基因创建Venn图
+venn_data_down <- list(
+  AbH_vs_AbC = degs_down_AbH_vs_AbC,
+  DC_vs_AbC = degs_down_DC_vs_AbC,
+  DH_vs_DC = degs_down_DH_vs_DC
+)
+
+venn_down <- venn.diagram(
+  x = venn_data_down,
+  category.names = c("AbH vs AbC", "DC_vs_AbC", "DH vs DC"),
+  filename = NULL,  # 直接绘制到RStudio绘图窗格
+  fill = c("purple", "orange", "cyan"),
+  alpha = 0.5,
+  cex = 1.5,
+  cat.cex = 1.5
+)
+
+grid.draw(venn_down)
+
+
