@@ -1,0 +1,171 @@
+##The DESeqDataSet object, sample information and the design formula
+##https://bioconductor.org/packages/release/workflows/vignettes/rnaseqGene/inst/doc/rnaseqGene.html#pca-plot
+
+#设置文件路径
+dir <- ""
+
+#读取文件
+csvfile <- file.path(dir,"Gene_count.xls")
+data <- read.csv(csvfile,row.names = 1,stringsAsFactors = F, header = T, sep = "\t")
+head(data)
+
+#提取count数据
+countdata <- data[,-c(1:8)]
+head(countdata)
+
+#创建样品信息
+coldata <- data.frame(
+  SampleID = colnames(countdata),
+  Bacteria = c(rep("WT",6), rep("DeltaA",6)),
+  HNP1 = c(rep("None", 3),rep("Treated",3),rep("None", 3),rep("Treated",3))
+)
+rownames(coldata) <- coldata$SampleID
+coldata <- coldata[,-1]
+head(coldata)
+
+#创建DESeqDataSet
+library(DESeq2)
+ddsMat <- DESeqDataSetFromMatrix(countData = countdata,
+                                 colData = coldata,
+                                 design = ~ Bacteria + HNP1)
+
+
+#预过滤数据
+dds <- ddsMat
+nrow(dds)
+
+smallestGroupSize <- 3
+keep <- rowSums(counts(dds) >= 10) >= smallestGroupSize
+dss <- dds[keep,]
+nrow(dds)
+
+#Differential expression analysis
+
+dds <- DESeq(dds)
+
+res <- results(dds)
+res
+
+#P < 0.05
+res.05 <- results(dds,alpha = 0.05)
+table(res.05$padj < 0.05)
+
+#≥2倍变化
+resLFC1 <- results(dds,lfcThreshold = 1)
+table(resLFC1$padj < 0.1)
+
+
+res.bacteria <- results(dds, contrast = c("Bacteria","WT","DeltaA"))
+res.bacteria
+
+res.HNP1 <- results(dds, contrast = c("HNP1","None","Treated"))
+res.HNP1
+
+#Both vst and rlog return a DESeqTransform object which is based on the SummarizedExperiment class. The transformed values are no longer counts, and are stored in the assay slot. The colData that was attached to dds is still accessible:
+vsd <- vst(dds,blind = F)
+head(assay(vsd))
+
+rld <- rlog(dds, blind = F)
+head(assay(rld))
+
+#Sample distances
+sampleDists <- dist(t(assay(vsd)))
+sampleDists
+
+# visualize the distances in a heatmap in a figure
+#install.packages('pheatmap')
+library("pheatmap")
+library("RColorBrewer")
+
+sampleDistMatrix <- as.matrix(sampleDists)
+#rownames(sampleDistMatrix) <- paste(vsd$Bacteria,vsd$HNP1,sep = "-")
+#colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette(rev(brewer.pal(9,"Blues")))(255)
+
+Bacteria.color <- c("#56BFC3","#BF7FFF")
+names(Bacteria.color) <- c("WT","DeltaA")
+
+HNP1.color <- c("#E8776F","#84AD00")
+names(HNP1.color) <- c("None","Treated")
+
+ann_colors <- list(Bacteria = Bacteria.color,
+                   HNP1 = HNP1.color)
+
+#Another option for calculating sample distances is to use the Poisson Distance (Witten 2011)
+#install.packages("PoiClaClu")
+library("PoiClaClu")
+poisd <- PoissonDistance(t(counts(dds)))
+samplePoisDistMatrix <- as.matrix(poisd$dd)
+rownames(samplePoisDistMatrix) <- rownames(coldata)
+colnames(samplePoisDistMatrix) <- rownames(coldata)
+
+pheatmap(samplePoisDistMatrix,
+         clustering_distance_rows = poisd$dd,
+         clustering_distance_cols = poisd$dd,
+         col = colors,
+         annotation_col = coldata,
+         annotation_row = coldata,
+         annotation_colors = ann_colors
+         )
+
+topVarGenes <- head(order(rowVars(assay(vsd)),decreasing = T), 100)
+top <- head(order())
+
+mat <- assay(vsd)[topVarGenes,]
+mat <- mat - rowMeans(mat)
+anno <- as.data.frame(colData(vsd))[,c("Bacteria","HNP1")]
+
+pheatmap(mat,
+         cluster_rows = T,
+         cluster_cols = T,
+         annotation_col = coldata,
+         show_rownames = F,
+         show_colnames = T,
+         fontsize_row = 10,
+         fontsize_col = 10,
+         scale = "row")
+
+
+# data 包含 EnsemblID 和 SymbolID 列
+annotation_row <- data.frame(SymbolID = data$SymbolID)
+rownames(annotation_row) <- rownames(data)
+
+# 定义颜色映射
+ann_colors <- list(
+  Bacteria = c(WT = "#E8776F", DeltaA = "#84AD00"),
+  HNP1 = c(None = "#56BFC3", Treated = "#BF7FFF")
+)
+
+# 创建带有 products 注释的行名
+rownames_with_products <- paste(rownames(mat), gff_df$Name[match(rownames(mat), gff_df$Locus.tag)], sep = " - ")
+Top_products <- gff_df$Name[match(rownames(mat),gff_df$Locus.tag)]
+products <- gff_df$Name[match(rownames(cpm),gff_df$Locus.tag)]
+
+cpm$products <- products
+# 将 cpm 数据框输出为 CSV 文件
+write.csv(cpm, "cpm_output.csv", row.names = TRUE)
+
+# 将新的行名赋值给 mat
+rownames(mat) <- rownames_with_products
+
+# 查看新的行名
+head(rownames(mat))
+
+#重新整理annotation_row
+head(annotation_row)
+# 创建带有 products 注释的行名
+rownames(annotation_row) <- paste(rownames(annotation_row), gff_df$Name[match(rownames(annotation_row), gff_df$Locus.tag)], sep = " - ")
+
+pheatmap(mat,
+         cluster_rows = T,
+         cluster_cols = F,
+         annotation_col = coldata,
+         cluster_cols = T,
+         annotation_col = coldata,
+         annotation_row = annotation_row,  # 添加 SymbolID 注释
+         show_rownames = T,
+         show_colnames = T,
+         fontsize_row = 10,
+         fontsize_col = 10,
+         scale = "row",
+         annotation_colors = ann_colors)
